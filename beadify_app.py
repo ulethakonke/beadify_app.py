@@ -1,46 +1,56 @@
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw, ImageOps
 import numpy as np
-from sklearn.cluster import KMeans
-import io
 
-st.set_page_config(page_title="Beadify App", layout="wide")
+st.set_page_config(layout="wide")
+st.title("🧵 Beadify - Convert Image to Beaded Art Preview")
 
-st.title("🎨 Beadify Your Image")
+# Sidebar controls
+st.sidebar.header("🔧 Settings")
+bead_diameter = st.sidebar.slider("Bead Size (mm)", 2, 20, 5)
+bead_spacing = st.sidebar.slider("Spacing Between Beads (pixels)", 0, 10, 2)
+max_strings = st.sidebar.slider("Number of Bead Strings (Width)", 30, 200, 100)
+shiny = st.sidebar.checkbox("Add Shine to Beads", value=True)
 
-uploaded_file = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
-bead_resolution = st.slider("Adjust bead resolution (lower = finer detail)", 5, 100, 30)
-
-def resize_image(image, scale):
-    width, height = image.size
-    new_size = (width // scale, height // scale)
-    return image.resize(new_size, Image.NEAREST)
-
-def kmeans_beadify(image_array, n_colors=12):
-    w, h, d = image_array.shape
-    flat_img = image_array.reshape((w * h, d))
-    kmeans = KMeans(n_clusters=n_colors, random_state=42).fit(flat_img)
-    clustered = kmeans.cluster_centers_[kmeans.labels_]
-    clustered_img = clustered.reshape((w, h, d)).astype(np.uint8)
-    return clustered_img
+# Upload image
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
-    image = Image.open(uploaded_file).convert("RGB")
-    
-    # Resize to low resolution (bead resolution)
-    bead_image = resize_image(image, bead_resolution)
+    img = Image.open(uploaded_file).convert("RGB")
+    img_ratio = img.height / img.width
 
-    # Convert back to numpy and cluster
-    bead_np = np.array(bead_image)
-    clustered = kmeans_beadify(bead_np)
+    # Resize the image to fit the number of bead strings
+    img = img.resize((max_strings, int(max_strings * img_ratio)))
+    colors = np.array(img)
 
-    # Convert back to image for final render
-    final_img = Image.fromarray(clustered).resize(image.size, Image.NEAREST)
+    rows, cols = colors.shape[0], colors.shape[1]
+    bead_img = Image.new("RGB", ((bead_diameter + bead_spacing) * cols, (bead_diameter + bead_spacing) * rows), "white")
+    draw = ImageDraw.Draw(bead_img)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Original Image")
-        st.image(image, use_column_width=True)
-    with col2:
-        st.subheader("Beadified Image")
-        st.image(final_img, use_column_width=True)
+    for y in range(rows):
+        for x in range(cols):
+            color = tuple(colors[y, x])
+            cx = x * (bead_diameter + bead_spacing) + bead_diameter // 2
+            cy = y * (bead_diameter + bead_spacing) + bead_diameter // 2
+            bbox = [
+                (cx - bead_diameter // 2, cy - bead_diameter // 2),
+                (cx + bead_diameter // 2, cy + bead_diameter // 2)
+            ]
+            draw.ellipse(bbox, fill=color)
+
+            if shiny:
+                shine_x = cx - bead_diameter // 4
+                shine_y = cy - bead_diameter // 4
+                shine_radius = bead_diameter // 6
+                draw.ellipse([
+                    (shine_x, shine_y),
+                    (shine_x + shine_radius, shine_y + shine_radius)
+                ], fill="white")
+
+    # Show final result
+    st.image(bead_img, caption="🧵 Beadified Preview", use_column_width=True)
+    st.download_button("Download Beaded Image", data=bead_img.tobytes(), file_name="beaded_art.png")
+
+else:
+    st.info("📷 Upload an image to get started.")
+

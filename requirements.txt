@@ -1,4 +1,4 @@
 streamlit
-scikit-learn
 Pillow
 numpy
+scikit-learn
