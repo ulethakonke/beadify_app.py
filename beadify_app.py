@@ -2,43 +2,46 @@ import streamlit as st
 from PIL import Image
 import numpy as np
 from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+import io
 
-# --- Settings ---
-NUM_STRINGS = 2600   # Horizontal resolution (number of bead lines)
-NUM_BEADS = 600      # Vertical resolution (number of beads per string)
-NUM_COLORS = 20      # Limit to 20 bead colors
+st.set_page_config(page_title="Beadify Image", layout="centered")
+st.title("🎨 Beadify Your Image!")
+st.markdown("Convert any image into a bead-art grid. Upload a photo and choose how many bead colors you'd like to use.")
 
-st.title("🎨 Beadify: Convert Images to Beadwork")
+# Upload image
+uploaded_file = st.file_uploader("Upload an image (JPG or PNG)", type=["jpg", "jpeg", "png"])
 
-uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+# Configurable settings
+num_colors = st.slider("Number of bead colors", min_value=2, max_value=50, value=15)
+output_size = st.slider("Bead grid width (pixels)", min_value=20, max_value=200, value=50)
 
 if uploaded_file:
-    # Load and resize image
-    img = Image.open(uploaded_file)
-    img = img.convert('RGB')
-    img_resized = img.resize((NUM_STRINGS, NUM_BEADS))
-    img_array = np.array(img_resized).reshape(-1, 3)
+    image = Image.open(uploaded_file).convert("RGB")
+    image = image.resize((output_size, int(image.height * output_size / image.width)))
 
-    # K-means color reduction
-    kmeans = KMeans(n_clusters=NUM_COLORS, random_state=0).fit(img_array)
-    labels = kmeans.predict(img_array)
-    bead_palette = kmeans.cluster_centers_.astype(int)
+    # Flatten image and apply KMeans clustering
+    image_np = np.array(image)
+    flat_img = image_np.reshape(-1, 3)
 
-    # Reconstruct image with bead palette
-    bead_img_array = bead_palette[labels].reshape((NUM_BEADS, NUM_STRINGS, 3)).astype(np.uint8)
-    bead_img = Image.fromarray(bead_img_array)
+    st.text("Reducing image to bead palette...")
+    kmeans = KMeans(n_clusters=num_colors, random_state=42).fit(flat_img)
+    clustered = kmeans.cluster_centers_[kmeans.labels_].astype("uint8").reshape(image_np.shape)
 
-    # Display original & beadified version
-    st.subheader("Original Image (resized)")
-    st.image(img_resized, use_column_width=True)
+    # Show final bead-style image
+    st.subheader("🧵 Beadified Output")
+    st.image(clustered, caption="Bead-style Output", use_column_width=True)
 
-    st.subheader("Bead Layout Preview")
-    st.image(bead_img, use_column_width=True)
+    # Show pixel color map
+    st.subheader("🧷 Bead Color Palette")
+    palette = np.array(kmeans.cluster_centers_).astype("uint8")
+    fig, ax = plt.subplots(figsize=(6, 1))
+    ax.imshow([palette])
+    ax.axis("off")
+    st.pyplot(fig)
 
-    # Option to download bead image
-    st.download_button(
-        label="Download Bead Image",
-        data=bead_img.tobytes(),
-        file_name="bead_image.bmp",
-        mime="image/bmp"
-    )
+    # Download image
+    result = Image.fromarray(clustered)
+    buf = io.BytesIO()
+    result.save(buf, format="PNG")
+    st.download_button("⬇️ Download Beadified Image", data=buf.getvalue(), file_name="beadified.png", mime="image/png")
